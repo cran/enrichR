@@ -1,7 +1,35 @@
 ## Author: Wajid Jawaid
-## Date: 17 February 2017
+## Date: 18 Julyy 2019
 ## enrichR package: sends data to http://http://amp.pharm.mssm.edu/Enrichr/ for gene enrichment
 ## in multiple databases.
+
+options(base_address = "http://amp.pharm.mssm.edu/Enrichr/")
+options(enrichRLive = TRUE)
+
+##' Helper function
+##'
+##' Helper function for GET
+##' @title Helper function for GET
+##' @param url url address requested
+##' @param ... Additional parameters to pass to GET
+##' @return same as GET
+##' @author Wajid Jawaid
+##' @importFrom httr GET
+getEnrichr <- function(url, ...) {
+    tryCatch(
+    {
+        options(enrichRLive = TRUE)
+        x <- GET(url=url, ...)
+    },
+    error = function(err_msg) {
+        message("EnrichR website not responding")
+        options(enrichRLive = FALSE)
+    },
+    finally = function() {
+       invisible(x) 
+    }
+    )
+}
 
 ##' Look up available databases on Enrichr
 ##'
@@ -13,9 +41,17 @@
 ##' @importFrom rjson fromJSON
 ##' @export
 listEnrichrDbs <- function() {
+    options(enrichRLive = TRUE)
     dfSAF <- options()$stringsAsFactors
     options(stringsAsFactors = FALSE)
-    dbs <- GET(url="http://amp.pharm.mssm.edu/Enrichr/datasetStatistics")$content
+    dbs <- getEnrichr(url=paste0(getOption("base_address"), "datasetStatistics"))
+    if (!getOption("enrichRLive")) return()
+    ## if (length(dbs) == 1) {
+    ##     if (dbs == "FAIL") {
+    ##         return()
+    ##     }
+    ## }
+    dbs <- dbs$content
     dbs <- intToUtf8(dbs)
     dbs <- fromJSON(dbs)
     dbs <- lapply(dbs$statistics, function(x) do.call(cbind.data.frame, x))
@@ -53,29 +89,40 @@ enrichr <- function(genes, databases = NULL) {
     ##      "ESCAPE")
     ##     databases <- gsub(" ", "_", dbs)
     ## }
+    if (length(genes) < 1) {
+        message("No genes have been given")
+        return()
+    }
+    x_text <- getEnrichr(url = getOption("base_address"))
+    if (!getOption("enrichRLive")) return()
+    if (is.null(databases)) {
+        message("No databases have been provided")
+        return()
+    }
     cat("Uploading data to Enrichr... ")
-    if (is.vector(genes)) {
-        temp <- POST(url="http://amp.pharm.mssm.edu/Enrichr/enrich",
+    if (is.vector(genes) & ! all(genes == "") & length(genes) != 0) {
+        temp <- POST(url=paste0(getOption("base_address"), "enrich"),
                      body=list(list=paste(genes, collapse="\n")))
     } else if (is.data.frame(genes)) {
-        temp <- POST(url="http://amp.pharm.mssm.edu/Enrichr/enrich",
+        temp <- POST(url=paste0(getOption("base_address"), "enrich"),
                      body=list(list=paste(paste(genes[,1], genes[,2], sep=","),
                                           collapse="\n")))
     } else {
-        warning("genes must be a vector of gene names or a dataframe with genes and score.")
+        warning("genes must be a non-empty vector of gene names or a dataframe with genes and score.")
     }
-    GET(url="http://amp.pharm.mssm.edu/Enrichr/share")
+    getEnrichr(url=paste0(getOption("base_address"), "share"))
     cat("Done.\n")
     dbs <- as.list(databases)
     dfSAF <- options()$stringsAsFactors
     options(stringsAsFactors = FALSE)
     result <- lapply(dbs, function(x) {
         cat("  Querying ", x, "... ", sep="")
-        r <- GET(url="http://amp.pharm.mssm.edu/Enrichr/export",
-                 query=list(file="API", backgroundType=x))
-        r <- intToUtf8(r$content)
+        r <- getEnrichr(url=paste0(getOption("base_address"), "export"),
+                        query=list(file="API", backgroundType=x))
+        if (!getOption("enrichRLive")) return()
+        r <- gsub("&#39;", "'", intToUtf8(r$content))
         tc <- textConnection(r)
-        r <- read.table(tc, sep = "\t", header = TRUE, quote = "")
+        r <- read.table(tc, sep = "\t", header = TRUE, quote = "", comment.char="")
         close(tc)
         cat("Done.\n")
         return(r)
@@ -95,8 +142,8 @@ enrichr <- function(genes, databases = NULL) {
 ##' @param file Name of output file.
 ##' @param sep Default TAB. How to separate fields.
 ##' @param columns Columns from each entry of data.
-##' 1-"Index", 2-"Name", 3-"Adjusted_P-value", 4-"Z-score"         
-##' 5-"Combined_Score", 6-"Genes", 7-"Overlap_P-value" 
+##' 1-"Index", 2-"Name", 3-"Adjusted_P-value", 4-"Z-score"
+##' 5-"Combined_Score", 6-"Genes", 7-"Overlap_P-value"
 ##' @return Produces file.
 ##' @author Wajid Jawaid
 ##' @export
