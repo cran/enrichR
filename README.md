@@ -1,7 +1,7 @@
 An R interface to the Enrichr database
 ================
 Wajid Jawaid
-2021-02-01
+2021-02-02
 
 <!-- README.md is generated from README.Rmd. Please edit that file -->
 
